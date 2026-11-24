@@ -141,7 +141,7 @@ function build {
 # deployable under src/ except the mocks, plus the pinned and the generated rollup verifier. Creation bytecode
 # embeds the runtime code and, through the metadata hash, every source file and compiler setting the contract is
 # built from, so any change to what one of these contracts would deploy changes its line. out/ is the default
-# profile's build, in which the Rollup links the mock BlobLib; the real one is still covered by its own line.
+# profile's build, which is what DeployRollupForUpgradeV6 deploys to mainnet.
 function bytecode_hashes {
   find out -name '*.json' -not -path 'out/build-info/*' -print0 | \
     xargs -0 jq -r 'select((.bytecode.object // "0x") != "0x")
