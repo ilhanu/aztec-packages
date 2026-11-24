@@ -137,10 +137,11 @@ function build {
   build_artifacts
 }
 
-# One `<sha256 of creation bytecode>  <source>:<contract>` line per protocol contract: everything deployable
-# under src/ except the mocks, plus the pinned and the generated rollup verifier. Creation bytecode embeds
-# the runtime code and, through the metadata hash, every source file the contract is compiled from, so a
-# change to what any of these contracts would deploy changes its line.
+# One `<sha256 of creation bytecode>  <source>:<contract>` line per production contract in out/: everything
+# deployable under src/ except the mocks, plus the pinned and the generated rollup verifier. Creation bytecode
+# embeds the runtime code and, through the metadata hash, every source file and compiler setting the contract is
+# built from, so any change to what one of these contracts would deploy changes its line. out/ is the default
+# profile's build, in which the Rollup links the mock BlobLib; the real one is still covered by its own line.
 function bytecode_hashes {
   find out -name '*.json' -not -path 'out/build-info/*' -print0 | \
     xargs -0 jq -r 'select((.bytecode.object // "0x") != "0x")
@@ -151,11 +152,11 @@ function bytecode_hashes {
     done | LC_ALL=C sort -k2
 }
 
-# Fails when a protocol contract's bytecode differs from bytecode_hashes.txt, so that every PR that changes
-# what L1 would deploy says so in its diff.
+# Fails when a contract's bytecode differs from bytecode_hashes.txt, so that a PR that changes what L1 would
+# deploy has to say so in its diff.
 function check_bytecode_hashes {
   if ! diff -u bytecode_hashes.txt <(bytecode_hashes); then
-    echo_stderr "The bytecode of the protocol L1 contracts above differs from bytecode_hashes.txt (- committed, + built)."
+    echo_stderr "The bytecode of the L1 contracts above differs from bytecode_hashes.txt (- committed, + built)."
     echo_stderr "If the change is intended, run './bootstrap.sh update_bytecode_hashes' in l1-contracts and commit the result."
     return 1
   fi

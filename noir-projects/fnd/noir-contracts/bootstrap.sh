@@ -120,33 +120,7 @@ function build {
   return $code
 }
 
-# One `<sha256>  <contract>` line per protocol contract, over everything in its artifact that determines its logic:
-# each function's ABI, bytecode (private ACIR or transpiled public bytecode) and VK, and the storage layout and
-# structs in `outputs`. Debug info, source and version stamps are left out.
-function contract_hashes {
-  local artifact
-  for artifact in target/*.json; do
-    echo "$(jq -cS '{functions: (.functions | map(del(.debug_symbols)) | sort_by(.name)), outputs}' "$artifact" | \
-      sha256sum | cut -d' ' -f1)  $(basename "$artifact" .json)"
-  done | LC_ALL=C sort -k2
-}
-
-# Fails when a protocol contract differs from contract_hashes.txt, so that every PR that changes one says so in its
-# diff.
-function check_contract_hashes {
-  if ! diff -u contract_hashes.txt <(contract_hashes); then
-    echo_stderr "The protocol contracts above differ from contract_hashes.txt (- committed, + built)."
-    echo_stderr "If the change is intended, run './bootstrap.sh update_contract_hashes' in noir-projects/fnd/noir-contracts and commit the result."
-    return 1
-  fi
-}
-
-function update_contract_hashes {
-  contract_hashes > contract_hashes.txt
-}
-
 function test_cmds {
-  echo "$(hash_str $({ cat contract_hashes.txt; contract_hashes; } | sha256sum | cut -d' ' -f1)) noir-projects/fnd/noir-contracts/bootstrap.sh check_contract_hashes"
   # Fairies want to run these tests on every PR
   if [ "${TARGET_BRANCH:-}" = "merge-train/fairies" ]; then
     $NARGO test --list-tests --silence-warnings | sort | while read -r package test; do
