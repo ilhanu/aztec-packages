@@ -221,6 +221,30 @@ function check_library_warnings {
     parallel -v --line-buffer --tag $NARGO --program-dir ./crates/{} check --deny-warnings
 }
 
+# One `<sha256 of the VK>  <circuit>` line per protocol circuit with a VK, as built into target/.
+function vk_hashes {
+  local artifact vk
+  for artifact in target/*.json; do
+    vk=$(jq -r '.verificationKey.bytes // empty' "$artifact")
+    [ -n "$vk" ] || continue
+    echo "$(printf %s "$vk" | sha256sum | cut -d' ' -f1)  $(basename "$artifact" .json)"
+  done | LC_ALL=C sort -k2
+}
+
+# Fails when a protocol circuit's VK differs from vk_hashes.txt, so that every PR that changes a VK says so
+# in its diff.
+function check_vk_hashes {
+  if ! diff -u vk_hashes.txt <(vk_hashes); then
+    echo_stderr "The VKs of the protocol circuits above differ from vk_hashes.txt (- committed, + built)."
+    echo_stderr "If the change is intended, run './bootstrap.sh update_vk_hashes' in noir-projects/fnd/noir-protocol-circuits and commit the result."
+    return 1
+  fi
+}
+
+function update_vk_hashes {
+  vk_hashes > vk_hashes.txt
+}
+
 export -f hex_to_fields_json circuit_kind compile generate_vk check_pinned_vk
 
 function build {
@@ -309,6 +333,10 @@ function test_cmds {
       "^noir-projects/fnd/chonk_circuits.json" \
       "^noir-projects/fnd/rollup_honk_circuits.json"))
     echo "$classifier_hash noir-projects/fnd/noir-protocol-circuits/scripts/circuit_kind.test.sh"
+  fi
+  # Keyed on the built VKs, which also depend on bb. The mock circuits reuse this script and have no hashes file.
+  if [ -f vk_hashes.txt ]; then
+    echo "$(hash_str $({ cat vk_hashes.txt; vk_hashes; } | sha256sum | cut -d' ' -f1)) noir-projects/fnd/noir-protocol-circuits/bootstrap.sh check_vk_hashes"
   fi
   # We don't blindly execute all circuits as some will have no `Prover.toml`.
   circuits_to_execute="

@@ -137,7 +137,37 @@ function build {
   build_artifacts
 }
 
+# One `<sha256 of creation bytecode>  <source>:<contract>` line per protocol contract: everything deployable
+# under src/ except the mocks, plus the pinned and the generated rollup verifier. Creation bytecode embeds
+# the runtime code and, through the metadata hash, every source file the contract is compiled from, so a
+# change to what any of these contracts would deploy changes its line.
+function bytecode_hashes {
+  find out -name '*.json' -not -path 'out/build-info/*' -print0 | \
+    xargs -0 jq -r 'select((.bytecode.object // "0x") != "0x")
+      | (.metadata.settings.compilationTarget | to_entries[0] | "\(.key):\(.value)") + " " + .bytecode.object' | \
+    grep -E '^(src/|script/deploy/HonkVerifier\.sol:|generated/HonkVerifier\.sol:)' | grep -v '^src/mock/' | \
+    while read -r name bytecode; do
+      echo "$(printf %s "$bytecode" | sha256sum | cut -d' ' -f1)  $name"
+    done | LC_ALL=C sort -k2
+}
+
+# Fails when a protocol contract's bytecode differs from bytecode_hashes.txt, so that every PR that changes
+# what L1 would deploy says so in its diff.
+function check_bytecode_hashes {
+  if ! diff -u bytecode_hashes.txt <(bytecode_hashes); then
+    echo_stderr "The bytecode of the protocol L1 contracts above differs from bytecode_hashes.txt (- committed, + built)."
+    echo_stderr "If the change is intended, run './bootstrap.sh update_bytecode_hashes' in l1-contracts and commit the result."
+    return 1
+  fi
+}
+
+function update_bytecode_hashes {
+  bytecode_hashes > bytecode_hashes.txt
+}
+
 function test_cmds {
+  # Keyed on the bytecode itself: $hash does not cover the generated verifier.
+  echo "$(hash_str $({ cat bytecode_hashes.txt; bytecode_hashes; } | sha256sum | cut -d' ' -f1)) l1-contracts/bootstrap.sh check_bytecode_hashes"
   echo "$hash cd l1-contracts && solhint --config ./.solhint.json \"src/**/*.sol\""
   echo "$hash cd l1-contracts && forge fmt --check"
   echo "$hash cd l1-contracts && scripts/check_contract_sizes.sh"
